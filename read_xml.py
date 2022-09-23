@@ -26,9 +26,9 @@ year = args.year
 
 # Parsing the XML file
 if 2015 <= year <= 2021:
-   xmlparse = et.parse(f'/scratch/project_2006385/otto/data/semparl-speeches-data-master/XML/2015-2021/Speeches_{year}.xml')
+   xmlparse = et.parse(f'../data/semparl-speeches-data-master/XML/2015-2021/Speeches_{year}.xml')
 elif 2000 <= year < 2015:
-   xmlparse = et.parse(f'/scratch/project_2006385/otto/data/semparl-speeches-data-master/XML/2000-2014/Speeches_{year}.xml')
+   xmlparse = et.parse(f'../data/semparl-speeches-data-master/XML/2000-2014/Speeches_{year}.xml')
 else:
    raise IndexError('Year must be between 2000 and 2021.')
 
