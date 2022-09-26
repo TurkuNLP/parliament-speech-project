@@ -31,8 +31,10 @@ parser.add_argument('--comet_workspace', required=True,
     help="give the name of your comet workspace")
 parser.add_argument('--comet_project', required=True,
     help="give the name of you comet project")
+parser.add_argument('--party_num', type=int, default=3,
+    help='how many parties should the data contain (3 or 8)')
 parser.add_argument('--learning_rate', type=float, default=0.00001,
-    help="set trainer learning rate")
+    help='set trainer learning rate')
 parser.add_argument('--batch_size', type=int, default=32,
     help='set trainer batch size')
 parser.add_argument('--max_steps', type=int, default=5000,
@@ -54,10 +56,14 @@ def main():
     
     experiment = comet(args.comet_key, args.comet_workspace, args.comet_project)
     
-    # Setup data paths
-    train_data = '../data/parl_speeches_2000-2021_threeparties_train.csv'
-    validation_data = '../data/parl_speeches_2000-2021_threeparties_validation.csv'
-    test_data = '../data/parl_speeches_2000-2021_threeparties_test.csv'
+    # Setup file paths
+    if args.party_num == 3:
+        party_num = 'three'
+    elif args.party_num == 8:
+        party_num = 'eight'
+    train_data = f'../data/parl_speeches_2000-2021_{party_num}parties_train.csv'
+    validation_data = f'../data/parl_speeches_2000-2021_{party_num}parties_validation.csv'
+    test_data = f'../data/parl_speeches_2000-2021_{party_num}parties_test.csv'
     
     cache_dir = '../hf_cache' # hf cache can get bloated with multiple runs so save to disk with enough storage
     output_dir = f'../results/models/model-with-comet/{args.xp_name}' # Where results are saved
@@ -90,9 +96,10 @@ def main():
         print('Number of labels:')
         print(num_labels)
         id2label = {0: 'SD', 1: 'KOK', 2: 'KESK', 3: 'VIHR', 4: 'VAS', 5: 'PS', 6: 'R', 7: 'KD'}
-        id2label_in_data = []
-        for i in label_ints:
-            id2label_in_data.append(id2label[i])
+        id2label_in_data = {}
+        for key, value in id2label.items():
+            if key in label_ints:
+                id2label_in_data[key] = value
         return num_labels, id2label_in_data
     
     num_labels, id2label_in_data = get_labels(dataset)
@@ -166,7 +173,7 @@ def main():
                 y_true = labels,
                 y_predicted = preds,
                 file_name = f'confusion-matrix-step-{step}.json',
-                labels = id2label_in_data,
+                labels = list(id2label_in_data.values()),
                 index_to_example_function = get_example,
             )
     
@@ -204,17 +211,17 @@ def main():
     
     # Evaluate results on test set
     # Results saved to file for later inspection
-    def evaluate():
+    def evaluate(name):
         eval_results = trainer.evaluate(dataset["test"])
-        with open(f'../results/evaluation_{args.xp_name}.txt', 'w') as f:
+        with open(f'../results/evaluation_{name}.txt', 'w') as f:
             f.write('Accuracy: ')
-            f.write(f'{eval_results['eval_accuracy']}\n')
+            f.write(f'{eval_results["eval_accuracy"]}\n')
             f.write('F1: ')
-            f.write(f'{eval_results['eval_f1']}\n')
+            f.write(f'{eval_results["eval_f1"]}\n')
             f.write('Loss: ')
-            f.write(f'{eval_results['eval_loss']}\n')
+            f.write(f'{eval_results["eval_loss"]}\n')
 
-    evaluate()
+    evaluate(args.xp_name)
 
 if __name__ == '__main__':
     main()
