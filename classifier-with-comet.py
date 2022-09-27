@@ -66,7 +66,7 @@ def main():
     test_data = f'../data/parl_speeches_2000-2021_{party_num}parties_test.csv'
     
     cache_dir = '../hf_cache' # hf cache can get bloated with multiple runs so save to disk with enough storage
-    output_dir = f'../results/models/model-with-comet/{args.xp_name}' # Where results are saved
+    output_dir = f'../results/models/{args.xp_name}' # Where results are saved
     
     # Load in train and test data
     print('Loading dataset...')
@@ -100,9 +100,12 @@ def main():
         for key, value in id2label.items():
             if key in label_ints:
                 id2label_in_data[key] = value
-        return num_labels, id2label_in_data
+        label2id_in_data = {}
+        for key, value in id2label_in_data:
+            label2id_in_data[value] = key
+        return num_labels, id2label_in_data, label2id_in_data
     
-    num_labels, id2label_in_data = get_labels(dataset)
+    num_labels, id2label_in_data, label2id_in_data = get_labels(dataset)
     
     # Initialise model and tokenizer
     model_name = 'TurkuNLP/bert-base-finnish-cased-v1'
@@ -134,7 +137,8 @@ def main():
     # Iinitialise model for sequence classification
     model = transformers.AutoModelForSequenceClassification.from_pretrained(model_name, 
                                                                             num_labels = num_labels, 
-                                                                            id2label = id2label_in_data)
+                                                                            id2label = id2label_in_data,
+                                                                            label2id = label2id_in_data)
     
     # Set training arguments
     trainer_args = transformers.TrainingArguments(
@@ -145,6 +149,7 @@ def main():
         load_best_model_at_end = True,
         eval_steps = 100,
         logging_steps = 100,
+        save_steps = 100,
         learning_rate = args.learning_rate,
         per_device_train_batch_size = args.batch_size,
         per_device_eval_batch_size = args.batch_size,
@@ -177,7 +182,7 @@ def main():
                 index_to_example_function = get_example,
             )
     
-        return {'accuracy': acc, 'f1': f1, 'precision': precision, 'recall': recall}
+        return {'accuracy': acc, 'macro-f1': f1, 'precision': precision, 'recall': recall}
     
     # Data collator pads the input to be of uniform size
     data_collator = transformers.DataCollatorWithPadding(tokenizer)
@@ -210,18 +215,18 @@ def main():
     trainer.train()
     
     # Evaluate results on test set
-    # Results saved to file for later inspection
-    def evaluate(name):
-        eval_results = trainer.evaluate(dataset["test"])
-        with open(f'../results/evaluation_{name}.txt', 'w') as f:
+    # Metrics saved to file for later inspection
+    def predict(name):
+        pred_results = trainer.predict(dataset["test"])
+        with open(f'../results/models/evaluation_{name}.txt', 'w') as f:
             f.write('Accuracy: ')
-            f.write(f'{eval_results["eval_accuracy"]}\n')
-            f.write('F1: ')
-            f.write(f'{eval_results["eval_f1"]}\n')
+            f.write(f'{pred_results[2]["test_accuracy"]}\n')
+            f.write('Macro-f1: ')
+            f.write(f'{pred_results[2]["test_macro-f1"]}\n')
             f.write('Loss: ')
-            f.write(f'{eval_results["eval_loss"]}\n')
+            f.write(f'{pred_results[2]["test_loss"]}\n')
 
-    evaluate(args.xp_name)
+    predict(args.xp_name)
 
 if __name__ == '__main__':
     main()
