@@ -20,6 +20,9 @@ parser = argparse.ArgumentParser(
             description='A script for predicting the political affiliation of the politician who gave a speech in Finnish parliament'
         )
 parser.add_argument('--xp_name', required=True,
+    help='give a name for this experiment')
+parser.add_argument('--party_num', type=int, default=3,
+    help='how many parties should the data contain (3 or 8)')
 parser.add_argument('--learning_rate', type=float, default=0.00001,
     help="set trainer learning rate")
 parser.add_argument('--batch_size', type=int, default=32,
@@ -32,9 +35,13 @@ args = parser.parse_args()
 
 def main():
     # Setup data paths
-    train_data = '../data/parl_speeches_2000-2021_threeparties_train.csv'
-    validation_data = '../data/parl_speeches_2000-2021_threeparties_validation.csv'
-    test_data = '../data/parl_speeches_2000-2021_threeparties_test.csv'
+    if args.party_num == 3:
+        party_num = 'three'
+    elif args.party_num == 8:
+        party_num = 'eight'
+    train_data = f'../data/parl_speeches_2000-2021_{party_num}parties_train.csv'
+    validation_data = f'../data/parl_speeches_2000-2021_{party_num}parties_validation.csv'
+    test_data = f'../data/parl_speeches_2000-2021_{party_num}parties_test.csv'
     
     cache_dir = '../hf_cache' # hf cache can get bloated with multiple runs so save to disk with enough storage
     output_dir = f'../results/models/model-with-comet/{args.xp_name}' # Where results are saved
@@ -70,9 +77,12 @@ def main():
         id2label_in_data = []
         for i in label_ints:
             id2label_in_data.append(id2label[i])
-        return num_labels, id2label_in_data
+        label2id_in_data = {}
+        for key, value in id2label_in_data:
+            label2id_in_data[value] = key
+        return num_labels, id2label_in_data, label2id_in_data
     
-    num_labels, id2label_in_data = get_labels(dataset)
+    num_labels, id2label_in_data, label2id_in_data = get_labels(dataset)
 
 
     #initialise model and tokenizer
@@ -105,7 +115,8 @@ def main():
     #initialise model for sequence classification
     model = transformers.AutoModelForSequenceClassification.from_pretrained(model_name, 
                                                                             num_labels = num_labels, 
-                                                                            id2label = id2label_in_data)
+                                                                            id2label = id2label_in_data,
+                                                                            label2id = label2id_in_data)
 
     # Set training arguments
     trainer_args = transformers.TrainingArguments(
@@ -123,7 +134,7 @@ def main():
         label_smoothing_factor = args.label_smoothing
     )
 
-    #function for computing accuracy
+    #function for computing metrics
     def compute_metrics(pred):
         labels = pred.label_ids
         preds = pred.predictions.argmax(-1)
@@ -132,7 +143,7 @@ def main():
         )
         acc = accuracy_score(labels, preds)
     
-        return {'accuracy': acc, 'f1': f1, 'precision': precision, 'recall': recall}
+        return {'accuracy': acc, 'macro-f1': f1, 'precision': precision, 'recall': recall}
 
     #data collator pads the input to be of uniform size
     data_collator = transformers.DataCollatorWithPadding(tokenizer)
@@ -140,24 +151,6 @@ def main():
     # Argument gives the number of steps of patience before early stopping
     early_stopping = transformers.EarlyStoppingCallback(
         early_stopping_patience = 10)
-
-    # Get logs for plotting etc.
-    # This functionality is currently not used in any way
-    class LogSavingCallback(transformers.TrainerCallback):
-        def on_train_begin(self, *args, **kwargs):
-            self.logs = defaultdict(list)
-            self.training = True
-
-        def on_train_end(self, *args, **kwargs):
-            self.training = False
-
-        def on_log(self, args, state, control, logs, model=None, **kwargs):
-            if self.training:
-                for k, v in logs.items():
-                    if k != "epoch" or v not in self.logs[k]:
-                        self.logs[k].append(v)
-
-    training_logs = LogSavingCallback()
 
     # Print a sample of test and validation labels to see that they are not ordered
     print('Sample of test and validation labels:')
@@ -181,18 +174,18 @@ def main():
     trainer.train()
 
     # Evaluate results on test set
-    # Results saved to file for later inspection
-    def evaluate():
-        eval_results = trainer.evaluate(dataset["test"])
-        with open(f'../results/evaluation_{args.xp_name}.txt', 'w') as f:
+    # Metrics saved to file for later inspection
+    def predict(name):
+        pred_results = trainer.predict(dataset["test"])
+        with open(f'../results/models/evaluation_{name}.txt', 'w') as f:
             f.write('Accuracy: ')
-            f.write(f'{eval_results["eval_accuracy"]}\n')
-            f.write('F1: ')
-            f.write(f'{eval_results["eval_f1"]}\n')
+            f.write(f'{pred_results[2]["test_accuracy"]}\n')
+            f.write('Macro-F1: ')
+            f.write(f'{pred_results[2]["test_macro-f1"]}\n')
             f.write('Loss: ')
-            f.write(f'{eval_results["eval_loss"]}\n')
+            f.write(f'{pred_results[2]["test_loss"]}\n')
 
-    evaluate()
+    predict(args.xp_name)
 
     #print a few example predictions
     model.to('cpu')
