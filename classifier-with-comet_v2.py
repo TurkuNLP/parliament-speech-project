@@ -31,8 +31,12 @@ parser.add_argument('--comet_workspace', required=True,
     help="give the name of your comet workspace")
 parser.add_argument('--comet_project', required=True,
     help="give the name of you comet project")
-parser.add_argument('--party_num', type=int, default=3,
+parser.add_argument('--party_num', type=int, default=8,
     help='how many parties should the data contain (3 or 8)')
+parser.add_argument('--train_years', type=str, default=2000, nargs='+',
+    help='years of training data, can give more than one separated by comma')
+parser.add_argument('--test_years', type=str, default=2019, nargs='+',
+    help='years of test data, can give more than one separated by comma')
 parser.add_argument('--learning_rate', type=float, default=0.00001,
     help='set trainer learning rate')
 parser.add_argument('--batch_size', type=int, default=32,
@@ -43,7 +47,7 @@ parser.add_argument('--label_smoothing', type=float, default=0.1,
     help='set label smoothing factor')
 args = parser.parse_args()
     
-def main():    
+def main(args):    
     
     # Create an experiment with your api key
     def comet(key, space, project):
@@ -56,28 +60,31 @@ def main():
     
     experiment = comet(args.comet_key, args.comet_workspace, args.comet_project)
     
-    # Setup file paths
-    if args.party_num == 3:
-        party_num = 'three'
-    elif args.party_num == 8:
-        party_num = 'eight'
-    train_data = f'../data/parl_speeches_2000-2021_{party_num}parties_train.csv'
-    validation_data = f'../data/parl_speeches_2000-2021_{party_num}parties_validation.csv'
-    test_data = f'../data/parl_speeches_2000-2021_{party_num}parties_test.csv'
+    def get_data(party_num, train_years, test_years):
+        if party_num == 3:
+            party_num = 'three'
+        elif party_num == 8:
+            party_num = 'eight'
+        train_data = []
+        test_data = []
+        for year in train_years:
+            train_data.append(f'../data/parl_speeches_2000-2021/parl_speeches_{year}.csv')
+        for year in test_years:
+            test_data.append(f'../data/parl_speeches_2000-2021/parl_speeches_{year}.csv')
+        cache_dir = '../hf_cache' # hf cache can get bloated with multiple runs so save to disk with enough storage
+        #output_dir = f'../results/models/{args.xp_name}' # Where results are saved
+        print('Loading dataset...')
+        dataset = load_dataset('csv', data_files = {'train': train_data,
+                                                    'test': test_data},
+                                                    cache_dir = cache_dir)
+        dataset=dataset.shuffle()
+        return dataset
     
-    cache_dir = '../hf_cache' # hf cache can get bloated with multiple runs so save to disk with enough storage
-    output_dir = f'../results/models/{args.xp_name}' # Where results are saved
-    
-    # Load in train and test data
-    print('Loading dataset...')
-    # The data has been shuffled, i.e., its not in chronological order
-    dataset = load_dataset('csv', data_files = {'train': train_data,
-                                                'validation': validation_data,
-                                                'test': test_data},
-                                                cache_dir = cache_dir)
-    
-    # Shuffle the dataset for good measure
-    dataset=dataset.shuffle()
+    train_years = [i for i in args.train_years]
+    test_years = [i for i in args.test_years]
+    print(train_years)
+    print(test_years)
+    dataset = get_data(args.party_num, train_years, test_years)
     
     # Let's see what the data looks like
     print('Here is the dataset:')
@@ -137,6 +144,14 @@ def main():
     tokens = tokenizer.tokenize(example)
     print(tokens)
     
+    def filter_short(dataset):
+        # remove speeches that are 12 tokens long or shorter
+        #too_short = dataset.filter(lambda x: len(x['input_ids']) <= 12)
+        dataset = dataset.filter(lambda x: len(x['input_ids']) > 12)
+        return dataset
+    
+    dataset = filter_short(dataset)
+    
     # Iinitialise model for sequence classification
     model = transformers.AutoModelForSequenceClassification.from_pretrained(model_name, 
                                                                             num_labels = num_labels, 
@@ -145,7 +160,7 @@ def main():
     
     # Set training arguments
     trainer_args = transformers.TrainingArguments(
-        output_dir = output_dir,
+        output_dir = f'../results/models/{args.xp_name}',
         save_total_limit = 1, #only keep the best model in the end
         evaluation_strategy = 'steps',
         logging_strategy = 'steps',
@@ -163,7 +178,7 @@ def main():
     
     # Function for computing accuracy and F score
     def get_example(index):
-        return dataset['validation'][index]['text']
+        return dataset['test'][index]['text']
     
     def compute_metrics(pred):
         experiment = comet_ml.get_global_experiment()
@@ -195,10 +210,9 @@ def main():
     early_stopping = transformers.EarlyStoppingCallback(
         early_stopping_patience = 10)
     
-    # Print a sample of test and validation labels to see that they are not ordered
-    print('Sample of test and validation labels:')
+    # Print a sample of test labels to see that they are not ordered
+    print('Sample of test labels:')
     print(dataset['test']['label'][:20])
-    print(dataset['validation']['label'][:20])
     
     # Train model
     # comet_ml automatically logs training data
@@ -209,7 +223,7 @@ def main():
         model = model,
         args = trainer_args,
         train_dataset = dataset['train'],
-        eval_dataset = dataset['validation'],
+        eval_dataset = dataset['test'],
         compute_metrics = compute_metrics,
         data_collator = data_collator,
         tokenizer = tokenizer,
@@ -233,4 +247,4 @@ def main():
     predict(args.xp_name)
 
 if __name__ == '__main__':
-    main()
+    main(args)

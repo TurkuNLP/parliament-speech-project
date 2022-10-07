@@ -33,6 +33,8 @@ parser.add_argument('--comet_project', required=True,
     help="give the name of you comet project")
 parser.add_argument('--party_num', type=int, default=3,
     help='how many parties should the data contain (3 or 8)')
+parser.add_argument('--decade', required=True,
+    help='starting decade i.e. 80 or 70')
 parser.add_argument('--learning_rate', type=float, default=0.00001,
     help='set trainer learning rate')
 parser.add_argument('--batch_size', type=int, default=32,
@@ -61,9 +63,10 @@ def main():
         party_num = 'three'
     elif args.party_num == 8:
         party_num = 'eight'
-    train_data = f'../data/parl_speeches_2000-2021_{party_num}parties_train.csv'
-    validation_data = f'../data/parl_speeches_2000-2021_{party_num}parties_validation.csv'
-    test_data = f'../data/parl_speeches_2000-2021_{party_num}parties_test.csv'
+    decade = str(args.decade)
+    train_data = f'../data/parl_speeches_{decade}vs10_{party_num}parties_train.csv'
+    validation_data = f'../data/parl_speeches_{decade}vs10_{party_num}parties_validation.csv'
+    test_data = f'../data/parl_speeches_{decade}vs10_{party_num}parties_test.csv'
     
     cache_dir = '../hf_cache' # hf cache can get bloated with multiple runs so save to disk with enough storage
     output_dir = f'../results/models/{args.xp_name}' # Where results are saved

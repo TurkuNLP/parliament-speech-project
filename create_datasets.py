@@ -23,6 +23,14 @@ def inspect_data(data, name):
     print(f'Shape of {name}:')
     print(data.shape)
 
+def replace_id(data):
+    data.drop(columns = ['id'], inplace=True)
+    ids = []
+    for i in range(len(data)):
+        ids.append(i)
+    data.insert(0, 'id', ids, True)
+    return data
+
 def filter(data, num_parties = 3):
     # Labels 0, 1 and 2 (SD, KOK, KESK) are vastly overrepresented
 
@@ -61,7 +69,8 @@ def main():
     num_parties = 8 #choose either 3 or 8 depending on how many parties you want in the final data
     data = load_data()
     inspect_data(data, 'data')
-    data = filter(data, num_parties) 
+    data = replace_id(data)
+    data = filter(data, num_parties)
     train, validation, test = create_splits(data)
     save_data([train, validation, test], ['train', 'validation', 'test'], num_parties)
 
